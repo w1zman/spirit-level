@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0c0e">
+<title>Spirit Level 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed 3D stage (a phone on an oak board balanced on a ball joint); slim top bar with wordmark + position switch; bottom instrument dock with live readings and actions. One dark look, like the iOS level. */
+:root{
+  --bg:#0b0c0e;
+  --glow:#2a231c;
+  --ink:#ecebe6;
+  --muted:#8f8c86;
+  --line:rgba(236,235,230,.14);
+  --glass:rgba(18,19,22,.72);
+  --level:#30d158;
+  --level-tint:rgba(48,209,88,.15);
+  --ref:#ff453a;
+  --ref-tint:rgba(255,69,58,.15);
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 var(--display);overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
+.stage{position:fixed;inset:0;background:radial-gradient(115% 72% at 50% 46%,var(--glow) 0%,var(--bg) 64%)}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
+#gl.grabbing{cursor:grabbing}
+[hidden]{display:none!important}
+
+.top{position:fixed;top:0;left:0;right:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 14px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  pointer-events:none}
+.top>*{pointer-events:auto}
+.mark{display:flex;flex-direction:column;gap:3px;min-width:0}
+.mark b{font-weight:760;font-stretch:125%;letter-spacing:.16em;font-size:13px;text-transform:uppercase;white-space:nowrap}
+.mark span{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em;white-space:nowrap}
+
+.seg{display:flex;padding:3px;border-radius:999px;background:var(--glass);border:1px solid var(--line);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.seg button{appearance:none;border:0;background:transparent;color:var(--muted);font:560 13px/1 var(--display);padding:9px 15px;border-radius:999px;cursor:pointer;transition:background .2s,color .2s}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button:disabled{cursor:default}
+.seg button:disabled[aria-pressed="false"]{opacity:.45}
+
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:2;pointer-events:none;
+  padding-top:10px;
+  padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px))}
+.dock-inner{max-width:560px;margin:0 auto;display:grid;gap:10px;pointer-events:auto}
+.hint{margin:0;font-family:var(--mono);font-size:11.5px;line-height:1.45;color:var(--muted);text-align:center;text-wrap:balance}
+.hint.warn{color:var(--ref)}
+
+.readouts{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--glass);border:1px solid var(--line);border-radius:16px;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+.ro{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.ro small{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ro output{display:block;font-family:var(--mono);font-weight:500;font-size:22px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.status{flex:none;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;border:1px solid var(--line);font-size:12.5px;font-weight:600;letter-spacing:.02em;color:var(--muted);white-space:nowrap;transition:color .25s,background .25s,border-color .25s}
+.status i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.status.is-level{color:var(--level);background:var(--level-tint);border-color:var(--level)}
+.status.is-ref{color:var(--ref);border-color:var(--ref-tint)}
+.status.is-ref.is-level{color:var(--level);background:var(--level-tint);border-color:var(--level)}
+
+.sensor{appearance:none;height:46px;border-radius:12px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);font:640 14px/1 var(--display);letter-spacing:.01em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px}
+.sensor i{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.5}
+.sensor[aria-pressed="true"]{background:var(--glass);color:var(--ink);border-color:var(--level)}
+.sensor[aria-pressed="true"] i{background:var(--level);opacity:1;box-shadow:0 0 0 4px var(--level-tint)}
+
+.actions{display:flex;gap:8px}
+.actions button{flex:1;min-width:0;appearance:none;height:42px;padding:0 8px;border-radius:12px;border:1px solid var(--line);background:var(--glass);color:var(--ink);font:560 13px/1 var(--display);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);transition:border-color .2s,background .2s,opacity .2s}
+.actions button:hover:not(:disabled){border-color:var(--muted)}
+.actions button:disabled{opacity:.4;cursor:default}
+#bDemo{display:flex;align-items:center;justify-content:center;gap:8px}
+#bDemo i{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--muted)}
+#bDemo[aria-pressed="true"] i{background:var(--level);border-color:var(--level)}
+#bRef[aria-pressed="true"]{border-color:var(--ref);color:var(--ref)}
+
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.nogl{position:fixed;inset:0;display:grid;place-items:center;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));font-size:15px;color:var(--muted);text-align:center;z-index:3}
+@media (max-width:380px){.ro output{font-size:19px}.actions button{font-size:12px}}
+</style>
+</head>
+<body>
+
+<div class="stage" aria-hidden="true"></div>
+<canvas id="gl" role="img" aria-label="A phone on a tilting oak board, running a spirit level."></canvas>
+
+<header class="top" id="top">
+  <div class="mark"><b>Spirit Level</b><span id="sub">Lying flat · bullseye</span></div>
+  <div class="seg" role="group" aria-label="Phone position">
+    <button id="mFlat" type="button" aria-pressed="true">Flat</button>
+    <button id="mEdge" type="button" aria-pressed="false">Edge</button>
+  </div>
+</header>
+
+<div class="dock" id="dock">
+  <div class="dock-inner">
+    <p class="hint" id="hint">Drag to tilt the board. Tap the phone to save the current angle as a reference.</p>
+    <div class="readouts" role="group" aria-label="Readings">
+      <div class="ro"><small id="l1">Pitch</small><output id="v1">0.0°</output></div>
+      <div class="ro" id="ro2"><small>Roll</small><output id="v2">0.0°</output></div>
+      <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Tilted</span></div>
+    </div>
+    <button id="bSensor" class="sensor" type="button" aria-pressed="false" hidden><i></i><span>Use my phone’s tilt</span></button>
+    <div class="actions">
+      <button id="bDemo" type="button" aria-pressed="true"><i></i>Demo</button>
+      <button id="bZero" type="button">Level the board</button>
+      <button id="bRef" type="button" aria-pressed="false">Set reference</button>
+    </div>
+  </div>
+</div>
+<div class="nogl" id="nogl" hidden>This level needs WebGL, and this browser has it turned off.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const DEG = Math.PI / 180;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const reduceMotion = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+  function rng(seed){ return () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+  const canvas = $("gl");
+  let renderer;
+  try {
+    if (!window.THREE) throw new Error("three missing");
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+  } catch (e) { $("nogl").hidden = false; return; }
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0x000000, 0);
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+
+  /* ---------- studio environment for reflections ---------- */
+  const pm = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.add(new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20), new THREE.MeshBasicMaterial({ color: 0x0e0f11, side: THREE.BackSide })));
+  function softbox(w, h, i, x, y, z, tint){
+    tint = tint || [1, 1, 1];
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(i * tint[0], i * tint[1], i * tint[2]), side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.lookAt(0, 0, 0); envScene.add(m);
+  }
+  softbox(9, 5, 5, -1, 9, 3, [1, .97, .92]);
+  softbox(3, 7, 2.4, -9, 3, 4);
+  softbox(1.4, 9, 3, 9, 3, -3, [.9, .95, 1]);
+  softbox(10, 1.2, 1.2, 0, -2, 9, [1, .85, .65]);
+  scene.environment = pm.fromScene(envScene, 0.03).texture;
+
+  /* ---------- lights ---------- */
+  scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x24170d, 0.45));
+  const key = new THREE.DirectionalLight(0xfff1e2, 2.5);
+  key.position.set(-3, 6.5, 3.5);
+  key.castShadow = true;
+  const smap = Math.min(window.innerWidth, window.innerHeight) < 700 ? 1024 : 2048;
+  key.shadow.mapSize.set(smap, smap);
+  Object.assign(key.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3, near: 1, far: 16 });
+  key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02; key.shadow.radius = 4;
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0xbcd2ff, 0.9);
+  rim.position.set(4, 3, -5); scene.add(rim);
+
+  /* ---------- geometry helpers ---------- */
+  function rr(w, h, r){
+    const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+    s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.absarc(x + w - r, y + r, r, -Math.PI / 2, 0, false);
+    s.lineTo(x + w, y + h - r); s.absarc(x + w - r, y + h - r, r, 0, Math.PI / 2, false);
+    s.lineTo(x + r, y + h); s.absarc(x + r, y + h - r, r, Math.PI / 2, Math.PI, false);
+    s.lineTo(x, y + r); s.absarc(x + r, y + r, r, Math.PI, 1.5 * Math.PI, false);
+    return s;
+  }
+  function flatShape(w, h, r){
+    const g = new THREE.ShapeGeometry(rr(w, h, r), 24);
+    const p = g.attributes.position, uv = g.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) + w / 2) / w, (p.getY(i) + h / 2) / h);
+    uv.needsUpdate = true; return g;
+  }
+
+  /* ---------- the phone ---------- */
+  const PW = 0.715, PH = 1.47, PD = 0.082, PR = 0.115, BEV = 0.018;
+  const SCW = PW - 0.066, SCH = PH - 0.066;
+  const TW = 384, TH = Math.round(TW * SCH / SCW);
+
+  const phone = new THREE.Group();
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x3a3b3f, metalness: .92, roughness: .3 });
+  const bodyGeo = new THREE.ExtrudeGeometry(rr(PW - 2 * BEV, PH - 2 * BEV, PR - BEV), {
+    depth: PD - 2 * BEV, bevelEnabled: true, bevelThickness: BEV, bevelSize: BEV, bevelSegments: 5, curveSegments: 24
+  });
+  bodyGeo.translate(0, 0, -(PD - 2 * BEV) / 2);
+  const body = new THREE.Mesh(bodyGeo, frameMat);
+  body.castShadow = true; phone.add(body);
+
+  const glass = new THREE.Mesh(flatShape(PW - 2 * BEV + 0.006, PH - 2 * BEV + 0.006, PR - BEV + 0.003),
+    new THREE.MeshPhysicalMaterial({ color: 0x020203, roughness: .06, metalness: 0, clearcoat: 1, clearcoatRoughness: .04 }));
+  glass.position.z = PD / 2 + 0.0006; phone.add(glass);
+
+  const sc = document.createElement("canvas"); sc.width = TW; sc.height = TH;
+  const sx = sc.getContext("2d");
+  const screenTex = new THREE.CanvasTexture(sc);
+  screenTex.encoding = THREE.sRGBEncoding; screenTex.anisotropy = maxAniso;
+  const screenMat = new THREE.MeshStandardMaterial({
+    color: 0x000000, emissive: 0xffffff, emissiveMap: screenTex, roughness: .12, metalness: 0,
+    envMapIntensity: .28, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+  });
+  const screen = new THREE.Mesh(flatShape(SCW, SCH, 0.098), screenMat);
+  screen.position.z = PD / 2 + 0.0012; phone.add(screen);
+
+  function sideButton(x, y, len){
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.012, len, 0.026), frameMat);
+    b.position.set(x, y, 0); phone.add(b);
+  }
+  sideButton(-PW / 2 - 0.003, 0.43, 0.07);
+  sideButton(-PW / 2 - 0.003, 0.28, 0.13);
+  sideButton(-PW / 2 - 0.003, 0.12, 0.13);
+  sideButton(PW / 2 + 0.003, 0.22, 0.2);
+
+  /* ---------- oak board on a ball joint ---------- */
+  function woodTexture(){
+    const r = rng(7), c = document.createElement("canvas");
+    c.width = 1024; c.height = 694;
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 0, c.height);
+    g.addColorStop(0, "#c08b56"); g.addColorStop(.5, "#b27c48"); g.addColorStop(1, "#c79360");
+    x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
+    for (let i = 0; i < 16; i++) {
+      const y = r() * c.height, h = 18 + r() * 90, dark = r() < .55;
+      x.fillStyle = dark ? `rgba(92,55,24,${.04 + r() * .08})` : `rgba(232,192,142,${.04 + r() * .07})`;
+      x.fillRect(0, y, c.width, h);
+    }
+    for (let i = 0; i < 240; i++) {
+      const y = r() * c.height, a = .04 + r() * .17, w = .6 + r() * 2.2, f = .002 + r() * .004, amp = 2 + r() * 10, ph = r() * 6.28;
+      x.beginPath();
+      for (let px = 0; px <= c.width; px += 16) {
+        const yy = y + Math.sin(px * f + ph) * amp + Math.sin(px * f * 3.1 + ph * 2) * amp * .3;
+        if (px) x.lineTo(px, yy); else x.moveTo(px, yy);
+      }
+      x.strokeStyle = `rgba(78,44,18,${a})`; x.lineWidth = w; x.stroke();
+    }
+    for (let i = 0; i < 5000; i++) { x.fillStyle = `rgba(60,34,14,${r() * .13})`; x.fillRect(r() * c.width, r() * c.height, 1 + r() * 3, 1); }
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = maxAniso; return t;
+  }
+  const wood = woodTexture();
+  const topMat = new THREE.MeshStandardMaterial({ map: wood, roughness: .56, metalness: 0, envMapIntensity: .5 });
+  const sideMat = new THREE.MeshStandardMaterial({ map: wood, color: 0xa87a52, roughness: .66, envMapIntensity: .35 });
+  const BOARD_W = 3.4, BOARD_D = 2.3, BOARD_T = 0.14, BALL_R = 0.14;
+  const BOARD_TOP = BALL_R + BOARD_T;
+  const board = new THREE.Mesh(new THREE.BoxGeometry(BOARD_W, BOARD_T, BOARD_D), [sideMat, sideMat, topMat, sideMat, sideMat, sideMat]);
+  board.position.y = BALL_R + BOARD_T / 2;
+  board.castShadow = true; board.receiveShadow = true;
+
+  const tiltRig = new THREE.Group();
+  tiltRig.add(board); tiltRig.add(phone); scene.add(tiltRig);
+
+  const GROUND = -1.2;
+  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x1c1d20, metalness: .82, roughness: .36 });
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 48, 32), new THREE.MeshStandardMaterial({ color: 0xc4c7cc, metalness: 1, roughness: .16 }));
+  ball.castShadow = true; scene.add(ball);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, -GROUND - 0.08, 32), darkMetal);
+  stem.position.y = (GROUND + 0.04) / 2; stem.castShadow = true; scene.add(stem);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 0.06, 64), darkMetal);
+  base.position.y = GROUND + 0.03; base.castShadow = true; base.receiveShadow = true; scene.add(base);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: .5 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = GROUND; ground.receiveShadow = true; scene.add(ground);
+
+  /* ---------- poses: how the phone rests on the board ----------
+     flat: on its back · R/L: on a long edge (landscape) · P/U: on a short edge (portrait / upside down)
+     rot = how the screen UI is turned so text reads upright */
+  const Y_FLAT = BOARD_TOP + PD / 2 + 0.001, Y_LAND = BOARD_TOP + PW / 2 + 0.002, Y_PORT = BOARD_TOP + PH / 2 + 0.002;
+  const pose = (ex, ez, y, o) => Object.assign({ q: new THREE.Quaternion().setFromEuler(new THREE.Euler(ex, 0, ez)), y }, o);
+  const POSE = {
+    flat: pose(-Math.PI / 2, 0, Y_FLAT, { flat: true, rot: 0, elev: 56, ty: BOARD_TOP, fw: 1.85, fh: 2.3, size: 92, sub: "Lying flat · bullseye" }),
+    R: pose(0, -Math.PI / 2, Y_LAND, { flat: false, rot: -Math.PI / 2, elev: 11, ty: Y_LAND, fw: 2.05, fh: 1.55, size: 124, sub: "On its edge · horizon" }),
+    L: pose(0, Math.PI / 2, Y_LAND, { flat: false, rot: Math.PI / 2, elev: 11, ty: Y_LAND, fw: 2.05, fh: 1.55, size: 124, sub: "On its edge · horizon" }),
+    P: pose(0, 0, Y_PORT, { flat: false, rot: 0, elev: 9, ty: Y_PORT, fw: 1.75, fh: 2.15, size: 104, sub: "Upright · horizon" }),
+    U: pose(0, Math.PI, Y_PORT, { flat: false, rot: Math.PI, elev: 9, ty: Y_PORT, fw: 1.75, fh: 2.15, size: 104, sub: "Upside down · horizon" })
+  };
+
+  /* ---------- state ---------- */
+  const S = {
+    pose: "flat", anim: { from: "flat", to: "flat", t0: -10 }, animDone: true,
+    rx: reduceMotion ? 6 : 8, rz: reduceMotion ? -8 : -10, vx: 0, vz: 0,
+    tx: reduceMotion ? 6 : 8, tz: reduceMotion ? -8 : -10,
+    demo: !reduceMotion, ref: null, level: false, levelBlend: 0, pulse: 0, jitter: 0,
+    bub: { x: 0, y: 0 }, sensor: false
+  };
+  const D = { next: 0, step: 0 };
+  const M = { g: new THREE.Vector3(0, 0, -1), tilt: 0, pitch: 0, roll: 0, angle: 0, pRaw: 0, rRaw: 0, aRaw: 0, bx: 0, by: 0 };
+
+  /* ---------- screen drawing (the iOS-style level UI) ---------- */
+  const SFONT = '-apple-system, "SF Pro Display", "Archivo", "Helvetica Neue", Arial, sans-serif';
+  function circle(c, x, y, r){ c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); }
+  function pill(c, x, y, w, h){ const r = h / 2; c.beginPath(); c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.arc(x + w - r, y + r, r, -Math.PI / 2, Math.PI / 2); c.lineTo(x + r, y + h); c.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5); c.closePath(); c.fill(); }
+  function number(c, n, x, y, size){
+    c.font = `200 ${size}px ${SFONT}`; c.textBaseline = "middle"; c.textAlign = "left";
+    const s = String(n), w = c.measureText(s).width;
+    c.fillText(s, x - w / 2, y);
+    c.fillText("°", x + w / 2 + size * 0.01, y);
+  }
+  function drawScreen(){
+    const c = sx, P = POSE[S.pose];
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+    c.fillStyle = "#000"; c.fillRect(0, 0, TW, TH);
+    const fg = S.ref ? "#ff453a" : "#ffffff";
+    const sideways = Math.abs(Math.sin(P.rot)) > 0.5;
+    const fw = sideways ? TH : TW, fh = sideways ? TW : TH;
+    c.translate(TW / 2, TH / 2); c.rotate(P.rot); c.translate(-fw / 2, -fh / 2);
+    const cx = fw / 2, cy = fh / 2, R = TW * 0.29;
+    const shown = S.level ? 0 : Math.round(M.tilt);
+    c.fillStyle = fg; c.globalCompositeOperation = "difference";
+    if (P.flat) {
+      circle(c, cx, cy, R);
+      circle(c, cx + S.bub.x, cy + S.bub.y, R);
+    } else {
+      c.save(); c.translate(cx, cy); c.rotate(-M.angle * DEG); c.fillRect(-fw, 0, fw * 2, fw); c.restore();
+    }
+    number(c, shown, cx, cy, P.size);
+    c.globalCompositeOperation = "source-over";
+    if (S.levelBlend > 0.002) {
+      c.globalAlpha = S.levelBlend;
+      c.fillStyle = "#30d158"; c.fillRect(-20, -20, fw + 40, fh + 40);
+      c.fillStyle = "#ffffff"; number(c, 0, cx, cy, P.size);
+      c.globalAlpha = 1;
+    }
+    if (S.pulse > 0.01) {
+      const k = 1 - S.pulse;
+      c.strokeStyle = `rgba(255,255,255,${S.pulse * .75})`; c.lineWidth = 2 + 6 * S.pulse;
+      c.beginPath(); c.arc(cx, cy, R * (0.9 + k * 0.9), 0, Math.PI * 2); c.stroke();
+    }
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = "#000"; pill(c, TW / 2 - 58, 20, 116, 34);   // Dynamic Island
+    screenTex.needsUpdate = true;
+  }
+
+  /* ---------- readings from gravity in the phone's own frame (x right, y to top, z out of screen) ---------- */
+  function measure(g){
+    M.g.copy(g);
+    const P = POSE[S.pose];
+    const ref = S.ref && S.ref.kind === S.pose ? S.ref : null;
+    M.pRaw = Math.atan2(g.y, -g.z) / DEG;
+    M.rRaw = Math.atan2(g.x, -g.z) / DEG;
+    if (P.flat) {
+      M.pitch = M.pRaw - (ref ? ref.p : 0);
+      M.roll = M.rRaw - (ref ? ref.r : 0);
+      M.tilt = ref ? Math.acos(clamp(g.dot(ref.g), -1, 1)) / DEG : Math.acos(clamp(-g.z, -1, 1)) / DEG;
+      M.bx = -(g.x - (ref ? ref.g.x : 0)); M.by = g.y - (ref ? ref.g.y : 0);
+    } else {
+      const cxv = g.x, cyv = -g.y, co = Math.cos(-P.rot), si = Math.sin(-P.rot);
+      M.aRaw = Math.atan2(cxv * co - cyv * si, cxv * si + cyv * co) / DEG;
+      const a = M.aRaw - (ref ? ref.a : 0);
+      M.angle = ((a + 540) % 360) - 180; M.tilt = Math.abs(M.angle);
+      M.bx = 0; M.by = 0;
+    }
+  }
+
+  /* ---------- HUD ---------- */
+  const el = { l1: $("l1"), v1: $("v1"), v2: $("v2"), ro2: $("ro2"), status: $("status"), statusText: $("statusText"), sub: $("sub"),
+    hint: $("hint"), bDemo: $("bDemo"), bZero: $("bZero"), bRef: $("bRef"), bSensor: $("bSensor"), mFlat: $("mFlat"), mEdge: $("mEdge") };
+  const cache = {};
+  function setText(node, k, v){ if (cache[k] !== v) { cache[k] = v; node.textContent = v; } }
+  const fmt = v => (Math.abs(v) < 0.05 ? "0.0" : (v < 0 ? "−" : "+") + Math.abs(v).toFixed(1)) + "°";
+  function updateHUD(){
+    if (POSE[S.pose].flat) {
+      setText(el.l1, "l1", "Pitch"); setText(el.v1, "v1", fmt(M.pitch)); setText(el.v2, "v2", fmt(M.roll));
+      if (el.ro2.hidden) el.ro2.hidden = false;
+    } else {
+      setText(el.l1, "l1", "Angle"); setText(el.v1, "v1", fmt(M.angle));
+      if (!el.ro2.hidden) el.ro2.hidden = true;
+    }
+    setText(el.statusText, "st", S.ref ? (S.level ? "Matched" : "Off reference") : (S.level ? "Level" : "Tilted"));
+    el.status.classList.toggle("is-level", S.level);
+    el.status.classList.toggle("is-ref", !!S.ref);
+  }
+  function setHint(text, warn){ el.hint.textContent = text; el.hint.classList.toggle("warn", !!warn); }
+  function defaultHint(){
+    if (S.ref) return setHint(S.sensor
+      ? "Reference saved. Tilt your phone back to that angle and the screen turns green."
+      : "Reference saved. Tilt the board back to it and the screen turns green.");
+    if (S.sensor) return setHint("Your phone’s sensors are driving the level. Lay it on a surface, or stand it on an edge.");
+    setHint(canSense
+      ? "Tap “Use my phone’s tilt” to measure with this phone, or drag to tilt the board."
+      : "Drag to tilt the board. Tap the phone to save the current angle as a reference.");
+  }
+  function updateRefUI(){
+    el.bRef.setAttribute("aria-pressed", S.ref ? "true" : "false");
+    el.bRef.textContent = S.ref ? "Clear reference" : "Set reference";
+    defaultHint();
+  }
+  function updatePoseUI(){
+    const flat = POSE[S.pose].flat;
+    el.mFlat.setAttribute("aria-pressed", flat ? "true" : "false");
+    el.mEdge.setAttribute("aria-pressed", flat ? "false" : "true");
+    el.sub.textContent = POSE[S.pose].sub;
+  }
+  function updateSensorUI(){
+    el.bSensor.setAttribute("aria-pressed", S.sensor ? "true" : "false");
+    el.bSensor.querySelector("span").textContent = S.sensor ? "Stop using phone tilt" : "Use my phone’s tilt";
+    el.bDemo.disabled = S.sensor; el.bZero.disabled = S.sensor;
+    el.mFlat.disabled = S.sensor; el.mEdge.disabled = S.sensor;
+    defaultHint();
+  }
+  function setDemo(on){
+    S.demo = on;
+    el.bDemo.setAttribute("aria-pressed", on ? "true" : "false");
+    if (on) D.next = performance.now() / 1000 + 0.4;
+  }
+  function stopDemo(){ if (S.demo) { setDemo(false); S.tx = S.rx; S.tz = S.rz; } }
+  function setPose(kind, auto){
+    if (kind === S.pose) return;
+    if (!auto) stopDemo();
+    S.anim = { from: S.pose, to: kind, t0: performance.now() / 1000 };
+    S.pose = kind; S.animDone = false; S.level = false;
+    S.ref = null; updateRefUI();
+    if (!POSE[kind].flat) S.tx = 0;
+    updatePoseUI();
+  }
+  function toggleRef(){
+    stopDemo();
+    if (S.ref) S.ref = null;
+    else {
+      S.tx = S.rx; S.tz = S.rz;
+      S.ref = { kind: S.pose, g: M.g.clone(), p: M.pRaw, r: M.rRaw, a: M.aRaw, bx: S.rx, bz: S.rz };
+    }
+    S.level = false;
+    updateRefUI();
+  }
+
+  el.mFlat.addEventListener("click", () => setPose("flat"));
+  el.mEdge.addEventListener("click", () => setPose("R"));
+  el.bDemo.addEventListener("click", () => setDemo(!S.demo));
+  el.bZero.addEventListener("click", () => { stopDemo(); S.tx = 0; S.tz = 0; });
+  el.bRef.addEventListener("click", toggleRef);
+
+  /* ---------- the phone's own tilt sensor ---------- */
+  const framed = (() => { try { return window.top !== window.self; } catch (e) { return true; } })();
+  const canSense = !framed && "DeviceOrientationEvent" in window && (navigator.maxTouchPoints || 0) > 0;
+  const sensor = { raw: new THREE.Vector3(0, 0, -1), g: new THREE.Vector3(0, 0, -1), got: false, listening: false, wake: null, timer: 0 };
+  el.bSensor.hidden = !canSense;
+
+  function onOrient(e){
+    if (e.beta == null || e.gamma == null) return;
+    const b = e.beta * DEG, gm = e.gamma * DEG;
+    // gravity in device coordinates from the W3C Z-X'-Y'' angles (alpha does not affect it)
+    sensor.raw.set(Math.sin(gm) * Math.cos(b), -Math.sin(b), -Math.cos(gm) * Math.cos(b));
+    if (!sensor.got) { sensor.got = true; sensor.g.copy(sensor.raw); activateSensor(); }
+  }
+  function startSensor(){
+    const DOE = window.DeviceOrientationEvent;
+    const listen = () => {
+      window.addEventListener("deviceorientation", onOrient);
+      sensor.listening = true; sensor.got = false;
+      clearTimeout(sensor.timer);
+      sensor.timer = setTimeout(() => {
+        if (!sensor.got) { stopSensor(); setHint("No tilt readings came through. Open this page over https in Safari or Chrome on your phone.", true); }
+      }, 1800);
+    };
+    if (DOE && typeof DOE.requestPermission === "function") {
+      DOE.requestPermission().then(r => {
+        if (r === "granted") listen();
+        else setHint("Motion access was turned down. Close this tab, open the page again and tap the button to allow it.", true);
+      }).catch(() => setHint("Motion access needs a tap on the button, over https. Try again from the page’s web address.", true));
+    } else listen();
+  }
+  function activateSensor(){
+    S.sensor = true; stopDemo(); S.ref = null; S.level = false;
+    updateRefUI(); updateSensorUI(); requestWake();
+  }
+  function stopSensor(){
+    window.removeEventListener("deviceorientation", onOrient);
+    clearTimeout(sensor.timer);
+    const was = S.sensor;
+    sensor.listening = false; sensor.got = false; S.sensor = false;
+    releaseWake();
+    if (was) {
+      const eu = new THREE.Euler().setFromQuaternion(tiltRig.quaternion, "XYZ");
+      S.rx = clamp(eu.x / DEG, -24, 24); S.rz = clamp(eu.z / DEG, -24, 24); S.vx = S.vz = 0;
+      S.tx = S.rx; S.tz = S.rz; S.ref = null;
+      if (S.pose !== "flat" && S.pose !== "R") setPose(POSE[S.pose].flat ? "flat" : "R", true);
+      updateRefUI();
+    }
+    updateSensorUI();
+  }
+  async function requestWake(){
+    try { if ("wakeLock" in navigator && !sensor.wake) { sensor.wake = await navigator.wakeLock.request("screen"); sensor.wake.addEventListener("release", () => { sensor.wake = null; }); } } catch (e) { sensor.wake = null; }
+  }
+  function releaseWake(){ try { if (sensor.wake) sensor.wake.release(); } catch (e) {} sensor.wake = null; }
+  document.addEventListener("visibilitychange", () => { if (S.sensor && document.visibilityState === "visible") requestWake(); });
+  el.bSensor.addEventListener("click", () => { if (S.sensor || sensor.listening) stopSensor(); else startSensor(); });
+
+  // which way the real phone is resting, with hysteresis so it doesn't flicker
+  function kindFromG(g, cur){
+    const az = Math.abs(g.z), ax = Math.abs(g.x), ay = Math.abs(g.y);
+    if (cur === "flat" ? az > 0.6 : az > 0.8) return "flat";
+    if ((cur === "R" || cur === "L") && ax > ay * 0.7) return g.x > 0 ? "R" : "L";
+    if ((cur === "P" || cur === "U") && ay > ax * 0.7) return g.y < 0 ? "P" : "U";
+    if (ax >= ay) return g.x > 0 ? "R" : "L";
+    return g.y < 0 ? "P" : "U";
+  }
+
+  /* ---------- pointer: drag tilts, tap on phone sets reference ---------- */
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  let ptr = null;
+  function snapIfClose(){
+    const bx = S.ref ? S.ref.bx : 0, bz = S.ref ? S.ref.bz : 0, flat = POSE[S.pose].flat;
+    const d = flat ? Math.hypot(S.tx - bx, S.tz - bz) : Math.abs(S.tz - bz);
+    if (d < 1.4) { S.tx = flat ? bx : 0; S.tz = bz; }
+  }
+  canvas.addEventListener("pointerdown", e => {
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+    if (!S.sensor) canvas.classList.add("grabbing");
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!ptr || e.pointerId !== ptr.id) return;
+    const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
+    ptr.x = e.clientX; ptr.y = e.clientY;
+    if (!ptr.moved && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) > 6) { ptr.moved = true; if (!S.sensor) stopDemo(); }
+    if (ptr.moved && !S.sensor && S.animDone) {
+      const k = 34 / Math.min(window.innerWidth, window.innerHeight);
+      S.tz = clamp(S.tz - dx * k, -24, 24);
+      if (POSE[S.pose].flat) S.tx = clamp(S.tx + dy * k, -24, 24);
+    }
+  });
+  function endPtr(e){
+    if (!ptr || e.pointerId !== ptr.id) return;
+    canvas.classList.remove("grabbing");
+    if (ptr.moved) { if (!S.sensor) snapIfClose(); }
+    else if (e.type === "pointerup") {
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      if (ray.intersectObject(phone, true).length) toggleRef();
+    }
+    ptr = null;
+  }
+  canvas.addEventListener("pointerup", endPtr);
+  canvas.addEventListener("pointercancel", endPtr);
+
+  window.addEventListener("keydown", e => {
+    if (S.sensor) return;
+    if (e.target && e.target.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+    const step = e.shiftKey ? 2 : 0.5, flat = POSE[S.pose].flat; let used = true;
+    if (e.key === "ArrowLeft") S.tz = clamp(S.tz + step, -24, 24);
+    else if (e.key === "ArrowRight") S.tz = clamp(S.tz - step, -24, 24);
+    else if (e.key === "ArrowUp" && flat) S.tx = clamp(S.tx - step, -24, 24);
+    else if (e.key === "ArrowDown" && flat) S.tx = clamp(S.tx + step, -24, 24);
+    else used = false;
+    if (used) {
+      if (S.demo) { const tx = S.tx, tz = S.tz; setDemo(false); S.tx = tx; S.tz = tz; }
+      const bx = S.ref ? S.ref.bx : 0, bz = S.ref ? S.ref.bz : 0;
+      if (Math.hypot(flat ? S.tx - bx : 0, S.tz - bz) < 0.6) { S.tx = flat ? bx : 0; S.tz = bz; }
+      e.preventDefault();
+    }
+  });
+
+  /* ---------- framing ---------- */
+  const view = { w: 1, h: 1, top: 0, bot: 0 };
+  function layout(){
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    view.w = w; view.h = h;
+    view.top = $("top").getBoundingClientRect().bottom;
+    view.bot = h - $("dock").getBoundingClientRect().top;
+    camera.aspect = w / h;
+    camera.setViewOffset(w, h, 0, Math.round((view.bot - view.top) / 2), w, h);
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", layout);
+  window.addEventListener("orientationchange", () => setTimeout(layout, 250));
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+
+  function camDistance(fitW, fitH){
+    const t = Math.tan(camera.fov * DEG / 2);
+    const avail = Math.max(view.h * 0.42, view.h - view.top - view.bot);
+    const dV = (fitH / 2) / t * (view.h / avail);
+    const dH = (fitW / 2) / (t * (view.w / view.h));
+    return Math.max(dV, dH);
+  }
+  const target = new THREE.Vector3();
+
+  /* ---------- demo ---------- */
+  function demoTick(now){
+    if (now < D.next || !S.animDone) return;
+    D.step++;
+    if (D.step % 8 === 0) { setPose(S.pose === "flat" ? "R" : "flat", true); D.next = now + 1.6; return; }
+    if (D.step % 3 === 0) { S.tx = 0; S.tz = 0; D.next = now + 3.1; return; }
+    const sgn = () => Math.random() < .5 ? -1 : 1;
+    S.tz = sgn() * (4 + Math.random() * 10);
+    S.tx = POSE[S.pose].flat ? sgn() * (3 + Math.random() * 9) : 0;
+    D.next = now + 2.2;
+  }
+
+  /* ---------- loop ---------- */
+  const KSPR = 58, CDAMP = 2 * Math.sqrt(KSPR) * 0.74, MAX_RIG = 38 * DEG;
+  const DOWN = new THREE.Vector3(0, -1, 0), vTmp = new THREE.Vector3(), gNow = new THREE.Vector3();
+  const qW = new THREE.Quaternion(), qAlign = new THREE.Quaternion(), qVis = new THREE.Quaternion();
+  let last = performance.now() / 1000;
+  if (S.demo) D.next = last + 1.1;
+
+  function frame(){
+    requestAnimationFrame(frame);
+    const now = performance.now() / 1000;
+    const dt = Math.min(0.05, Math.max(0.001, now - last)); last = now;
+
+    if (S.sensor) {
+      sensor.g.lerp(sensor.raw, 1 - Math.exp(-dt / 0.07)).normalize();
+      if (S.animDone) { const k = kindFromG(sensor.g, S.pose); if (k !== S.pose) setPose(k, true); }
+      // tilt the board so the virtual phone matches the real one (visual tilt capped; readings are not)
+      vTmp.copy(sensor.g).applyQuaternion(POSE[S.pose].q).normalize();
+      qAlign.setFromUnitVectors(vTmp, DOWN);
+      const ang = 2 * Math.acos(clamp(Math.abs(qAlign.w), -1, 1));
+      qVis.identity().slerp(qAlign, ang > MAX_RIG ? MAX_RIG / ang : 1);
+      tiltRig.quaternion.slerp(qVis, 1 - Math.exp(-dt * 20));
+    } else {
+      if (S.demo) demoTick(now);
+      if (!POSE[S.pose].flat) S.tx = 0;
+      S.vx += (KSPR * (S.tx - S.rx) - CDAMP * S.vx) * dt; S.rx += S.vx * dt;
+      S.vz += (KSPR * (S.tz - S.rz) - CDAMP * S.vz) * dt; S.rz += S.vz * dt;
+      tiltRig.rotation.set(S.rx * DEG, 0, S.rz * DEG);
+    }
+
+    // phone pose transition
+    const A = POSE[S.anim.from], B = POSE[S.anim.to];
+    const p = clamp((now - S.anim.t0) / 0.95, 0, 1), e = ease(p);
+    S.animDone = p >= 1;
+    phone.quaternion.copy(A.q).slerp(B.q, e);
+    let jx = 0;
+    if (S.jitter > 0) { S.jitter = Math.max(0, S.jitter - dt); jx = Math.sin(now * 210) * 0.0045 * (S.jitter / 0.18); }
+    phone.position.set(jx, lerp(A.y, B.y, e) + (A === B ? 0 : Math.sin(Math.PI * e) * 0.34), 0);
+
+    // gravity as the phone feels it
+    if (S.sensor) gNow.copy(sensor.g);
+    else { phone.getWorldQuaternion(qW); qW.invert(); gNow.copy(DOWN).applyQuaternion(qW); }
+    measure(gNow);
+
+    if (S.animDone) {
+      if (!S.level && M.tilt < 0.5) {
+        S.level = true; S.pulse = 1; S.jitter = reduceMotion ? 0 : 0.18;
+        if (S.sensor && navigator.vibrate) { try { navigator.vibrate(15); } catch (_) {} }
+      } else if (S.level && M.tilt > 0.9) S.level = false;
+    } else S.level = false;
+    S.levelBlend += ((S.level ? 1 : 0) - S.levelBlend) * (1 - Math.exp(-dt * 14));
+    S.pulse = Math.max(0, S.pulse - dt * 1.8);
+
+    const R = TW * 0.29, K = R * 3.3, maxB = R * 2.1;
+    let bx = M.bx * K, by = M.by * K;
+    const bl = Math.hypot(bx, by);
+    if (bl > maxB) { bx *= maxB / bl; by *= maxB / bl; }
+    const sm = 1 - Math.exp(-dt * 16);
+    S.bub.x += (bx - S.bub.x) * sm; S.bub.y += (by - S.bub.y) * sm;
+
+    drawScreen();
+    updateHUD();
+
+    // camera
+    const elev = lerp(A.elev, B.elev, e) * DEG;
+    const az = (reduceMotion || S.sensor ? 0 : Math.sin(now * 0.13) * 5) * DEG;
+    target.set(0, lerp(A.ty, B.ty, e), 0);
+    const d = camDistance(lerp(A.fw, B.fw, e), lerp(A.fh, B.fh, e));
+    camera.position.set(target.x + d * Math.cos(elev) * Math.sin(az), target.y + d * Math.sin(elev), target.z + d * Math.cos(elev) * Math.cos(az));
+    camera.lookAt(target);
+
+    renderer.render(scene, camera);
+  }
+  layout();
+  updatePoseUI(); updateRefUI(); updateSensorUI();
+  frame();
+})();
+</script>
+</body>
+</html>
